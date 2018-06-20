@@ -1,0 +1,97 @@
+SET ThousandSep=',';
+SET DecimalSep='.';
+SET MoneyThousandSep=',';
+SET MoneyDecimalSep='.';
+SET MoneyFormat='$#,##0.00;-$#,##0.00';
+SET TimeFormat='h:mm:ss TT';
+SET DateFormat='M/D/YYYY';
+SET TimestampFormat='M/D/YYYY h:mm:ss[.fff] TT';
+SET FirstWeekDay=6;
+SET BrokenWeeks=1;
+SET ReferenceDay=0;
+SET FirstMonthOfYear=1;
+SET CollationLocale='en-US';
+SET CreateSearchIndexOnReload=1;
+SET MonthNames='Jan;Feb;Mar;Apr;May;Jun;Jul;Aug;Sep;Oct;Nov;Dec';
+SET LongMonthNames='January;February;March;April;May;June;July;August;September;October;November;December';
+SET DayNames='Mon;Tue;Wed;Thu;Fri;Sat;Sun';
+SET LongDayNames='Monday;Tuesday;Wednesday;Thursday;Friday;Saturday;Sunday';
+SET NumericalAbbreviation='3:k;6:M;9:G;12:T;15:P;18:E;21:Z;24:Y;-3:m;-6:μ;-9:n;-12:p;-15:f;-18:a;-21:z;-24:y';
+
+// ************************************************
+// ** Configuration variables
+// ************************************************
+
+SET GroupsOfInterest = 'Group1','Group2';
+SET LDAPConnection = 'LDAP://domain.local';
+SET Category = 'CN=Group,CN=Schema,CN=Configuration,DC=domain,DC=local';
+SET OutputFolderConnection = 'lib://UserInfo (domain_administrator)/';
+LIB CONNECT TO 'LDAP (domain_administrator)';
+
+// ************************************************
+
+LET marker=chr(01);
+DO
+    UserTable:
+    LOAD
+        sAMAccountName as userid,
+        name;
+    FIRST 1000 SQL
+        SELECT sAMAccountName, name
+        FROM '$(LDAPConnection)'
+        WHERE objectCategory='person' AND objectClass = 'User' and name >'$(marker)'
+        ORDER BY name;
+
+    EXIT DO WHEN ScriptError > 1;
+    EXIT DO WHEN NoOfRows('UserTable') = 0;
+    EXIT DO WHEN peek('name') = '$(arg)'; 
+
+    LET marker=peek('name');
+LOOP;
+
+FOR EACH group IN $(GroupsOfInterest)
+    trace Processing group $(group).;
+    
+    GroupTable:
+    LOAD
+        name AS GroupName,
+        name,
+        distinguishedName;
+    SQL
+        SELECT name, distinguishedName
+        FROM '$(LDAPConnection)'
+        WHERE objectCategory = '$(Category)' AND name = '$(group)';
+NEXT group
+
+LET vNoOfRowsGroupTable = NoOfRows('GroupTable');
+FOR i = 0 to $(vNoOfRowsGroupTable)-1
+    // Pick next group name and distinguished name
+    LET vGroupName = Peek('name' , $(i), 'GroupTable');
+    LET vDistinguishedName = Peek('distinguishedName' , $(i), 'GroupTable');
+
+    LET iPlusOne = $(i)+1;
+    TRACE $(iPlusOne) of $(vNoOfRowsGroupTable) : $(vGroupName);
+ 
+    LET marker=chr(01);
+    DO
+         GroupAttributes:
+         LOAD
+             sAMAccountName as userid,
+             'group' as type,
+             '$(vGroupName)' AS value;
+        FIRST 1000 SQL
+             SELECT sAMAccountName
+             FROM '$(LDAPConnection)'
+             WHERE objectCategory = 'person' AND memberOf = '$(vDistinguishedName)' AND sAMAccountName >'$(marker)'
+            ORDER BY sAMAccountName;
+
+        EXIT DO WHEN ScriptError > 1;
+        EXIT DO WHEN NoOfRows('GroupAttributes') = 0;
+        EXIT DO WHEN peek('userid') = '$(arg)'; 
+
+        LET marker=peek('userid');
+    LOOP;
+NEXT
+
+STORE GroupAttributes INTO [$(OutputFolderConnection)/GroupAttributes.csv] (txt);
+STORE UserTable INTO [$(OutputFolderConnection)/Users.csv] (txt);
