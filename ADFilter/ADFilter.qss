@@ -22,7 +22,7 @@ SET NumericalAbbreviation='3:k;6:M;9:G;12:T;15:P;18:E;21:Z;24:Y;-3:m;-6:μ;-9:n;
 // ** Configuration variables
 // ************************************************
 
-SET GroupsOfInterest = 'Group1','Group2';
+SET GroupsOfInterest = ['Group1','Group2'];
 SET LDAPConnection = 'LDAP://domain.local';
 SET Category = 'CN=Group,CN=Schema,CN=Configuration,DC=domain,DC=local';
 SET OutputFolderConnection = 'lib://UserInfo (domain_administrator)/';
